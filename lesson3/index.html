@@ -112,6 +112,7 @@ body { background: #FFF3E0; min-height: 100vh; overflow: hidden; }
     하트 5개로 여유롭게 시작하세요.<br>
     <b style="color:#C94A1D;">전설의 마스터</b>가 되어보세요!
   </div>
+  <input id="playerName" maxlength="20" placeholder="이름을 입력하세요" style="margin-top:16px; padding:12px 18px; font-size:18px; border:3px solid var(--brown); border-radius:16px; text-align:center; width:240px; max-width:82%; font-family:'Jua',sans-serif;">
   <button class="btn-start" onclick="startGame()">장사 시작!</button>
 </div>
 <div class="screen" id="gameScreen">
@@ -368,6 +369,7 @@ function updateShopVisuals() {
       document.getElementById('endingWordCount').textContent = encounteredWords.size;
       document.getElementById('endingWordReview').innerHTML = getWordReviewHTML();
       playSound('correct');
+      submitResult('클리어');
       showScreen('endingScreen');
     }, 1500);
   }
@@ -400,9 +402,39 @@ function checkMission(success) {
   }
 }
 
+// ===== 결과를 구글 폼(시트)으로 자동 전송 =====
+const GAME_UNIT = "서일영어 레벨3 Lesson 3";
+const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSd54-GFb0hH81EnrwL2gBnw_pW047weFL-G9XXhnF75qphwOA/formResponse';
+const FORM_ENTRY = { name:'entry.2107882554', unit:'entry.2003579790', score:'entry.894669669', correct:'entry.294136866', result:'entry.1407691860', wrong:'entry.1949777123' };
+let playerName = '', wrongWords = new Set(), resultSubmitted = false;
+function submitResult(resultText) {
+  if (resultSubmitted) return;
+  resultSubmitted = true;
+  try {
+    const params = new URLSearchParams();
+    params.append(FORM_ENTRY.name, playerName || "(이름없음)");
+    params.append(FORM_ENTRY.unit, GAME_UNIT);
+    params.append(FORM_ENTRY.score, String(money));
+    params.append(FORM_ENTRY.correct, String(servedCount));
+    params.append(FORM_ENTRY.result, resultText);
+    params.append(FORM_ENTRY.wrong, Array.from(wrongWords).join(", ") || "없음");
+    params.append("fvv", "1"); params.append("pageHistory", "0"); params.append("submit", "Submit");
+    const body = params.toString();
+    let sent = false;
+    if (navigator.sendBeacon) {
+      try { sent = navigator.sendBeacon(FORM_URL, new Blob([body], { type: "application/x-www-form-urlencoded" })); } catch (e) {}
+    }
+    if (!sent) {
+      fetch(FORM_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body });
+    }
+  } catch (e) {}
+}
 function startGame() {
+  const __nm = document.getElementById('playerName');
+  if (__nm) { playerName = __nm.value.trim(); if (!playerName) { __nm.focus(); __nm.style.borderColor = '#C62828'; return; } }
   playSound('click');
   warmUpVoice();
+  wrongWords = new Set(); resultSubmitted = false;
   money = 0; hearts = maxHearts; level = 1; combo = 0; maxCombo = 0; servedCount = 0; roundServed = 0;
   ownedUpgrades.clear(); encounteredWords.clear(); updateShopVisuals(); wordQueue = shuffle(vocab); activeMission = null;
   document.getElementById('missionBanner').classList.remove('show');
@@ -479,7 +511,7 @@ function handleAnswer(selected, btn) {
     checkMission(true); updateHUD(); showResultPopup(true, earned);
   } else {
     playSound('wrong');
-    combo = 0; btn.classList.add('wrong');
+    combo = 0; btn.classList.add('wrong'); wrongWords.add(currentWord.en);
     document.querySelectorAll('.ans-btn').forEach(b => { if(b.textContent===correct) b.classList.add('correct'); });
     hearts--; checkMission(false); updateHUD();
     document.getElementById('customerEmoji').classList.replace('idle', 'wrong');
@@ -489,7 +521,7 @@ function handleAnswer(selected, btn) {
 
 function timeOut() {
   if (!answering) return;
-  answering = false; combo = 0; hearts--; checkMission(false); updateHUD();
+  answering = false; combo = 0; hearts--; wrongWords.add(currentWord.en); checkMission(false); updateHUD();
   playSound('wrong');
   document.getElementById('customerEmoji').classList.replace('idle', 'wrong');
   showResultPopup('timeout', 0);
@@ -504,6 +536,7 @@ function getWordReviewHTML() {
 function showResultPopup(res, earned) {
   const p = document.getElementById('resultPopup'), t = document.getElementById('popupTitle'), d = document.getElementById('popupDesc'), m = document.getElementById('popupMoney'), b = document.getElementById('popupBtn');
   if(res === 'gameover') {
+    submitResult('게임오버');
     playSound('wrong');
     document.getElementById('popupIcon').textContent = '🐟'; t.textContent = '장사 종료!';
     d.innerHTML = `오늘 번 돈: <b>${money.toLocaleString()}원</b><br>서빙: ${servedCount}명 / 최대콤보: ${maxCombo}<br><br><div style="font-weight:bold; margin-bottom:5px;">📖 오늘 복습할 단어장 (총 ${encounteredWords.size}단어)</div><div class="word-review-box">${getWordReviewHTML()}</div>`;
